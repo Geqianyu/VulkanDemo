@@ -86,6 +86,8 @@ private:
     /******************************************mainLoop*******************************************/
     void drawFrame();
     void recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _imageIndex);
+    void recreateSwapchain();
+    void cleanupSwapchain();
     /*********************************************************************************************/
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -113,6 +115,8 @@ private:
 
         return buffer;
     }
+
+    static void framebufferResizeCallback(GLFWwindow* _window, int _width, int _height);
 
 private:
     GLFWwindow* m_window = nullptr;
@@ -148,6 +152,7 @@ private:
     std::vector<VkSemaphore> m_imageAvailableSemaphores;
     std::vector<VkSemaphore> m_renderFinishedSemaphores;
     std::vector<VkFence> m_flightFences;
+    bool m_framebufferResized = false;
     uint32_t m_currentFrame = 0;
 };
 

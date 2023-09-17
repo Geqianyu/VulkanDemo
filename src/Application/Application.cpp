@@ -36,7 +36,6 @@ void Application::initWindow(const int _width, const int _height, const std::str
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     m_window = glfwCreateWindow(_width, _height, _name.c_str(), nullptr, nullptr);
     if (m_window == nullptr)
@@ -44,6 +43,9 @@ void Application::initWindow(const int _width, const int _height, const std::str
         std::runtime_error(setFontColor("Failed to create a window", FontColor::Red));
     }
     std::cout << setFontColor("Success to create a window", FontColor::Green) << std::endl;
+
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
 }
 
 void Application::initVulkan()
@@ -79,22 +81,7 @@ void Application::mainLoop()
 
 void Application::cleanup()
 {
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
-        vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
-        vkDestroyFence(m_device, m_flightFences[i], nullptr);
-        std::cout << setFontColor("Destroy synchronization objects " + std::to_string(i), FontColor::Indigo) << std::endl;
-    }
-
-    vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-    std::cout << setFontColor("Destroy the command pool", FontColor::Indigo) << std::endl;
-
-    for (size_t i = 0; i < m_swapchainFramebuffers.size(); ++i)
-    {
-        vkDestroyFramebuffer(m_device, m_swapchainFramebuffers[i], nullptr);
-        std::cout << setFontColor("Destroy framebuffer " + std::to_string(i), FontColor::Indigo) << std::endl;
-    }
+    cleanupSwapchain();
 
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     std::cout << setFontColor("Destroy the graphics pipeline", FontColor::Indigo) << std::endl;
@@ -105,14 +92,16 @@ void Application::cleanup()
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
     std::cout << setFontColor("Destroy the render pass", FontColor::Indigo) << std::endl;
 
-    for (size_t i = 0; i < m_swapchainImageViews.size(); ++i)
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        vkDestroyImageView(m_device, m_swapchainImageViews[i], nullptr);
-        std::cout << setFontColor("Destroy the swap chain image view " + std::to_string(i), FontColor::Indigo) << std::endl;
+        vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
+        vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(m_device, m_flightFences[i], nullptr);
+        std::cout << setFontColor("Destroy synchronization objects " + std::to_string(i), FontColor::Indigo) << std::endl;
     }
 
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-    std::cout << setFontColor("Destroy the swap chain", FontColor::Indigo) << std::endl;
+    vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+    std::cout << setFontColor("Destroy the command pool", FontColor::Indigo) << std::endl;
 
     vkDestroyDevice(m_device, nullptr);
     std::cout << setFontColor("Destroy the logical device", FontColor::Indigo) << std::endl;
@@ -1237,10 +1226,20 @@ void Application::createSyncObjects()
 void Application::drawFrame()
 {
     vkWaitForFences(m_device, 1, &m_flightFences[m_currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
-    vkResetFences(m_device, 1, &m_flightFences[m_currentFrame]);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapchain, std::numeric_limits<uint64_t>::max(), m_imageAvailableSemaphores[m_currentFrame], nullptr, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, std::numeric_limits<uint64_t>::max(), m_imageAvailableSemaphores[m_currentFrame], nullptr, &imageIndex);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        m_framebufferResized = false;
+        recreateSwapchain();
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error(setFontColor("Failed to acquire swap chain image", FontColor::Red));
+    }
+
+    vkResetFences(m_device, 1, &m_flightFences[m_currentFrame]);
 
     vkResetCommandBuffer(m_commandBuffers[m_currentFrame], 0);
     recordCommandBuffer(m_commandBuffers[m_currentFrame], imageIndex);
@@ -1278,7 +1277,15 @@ void Application::drawFrame()
         &imageIndex,                                // pImageIndices
         nullptr                                     // pResults
     };
-    vkQueuePresentKHR(m_presentQueue, &presentInfoKHR);
+    result = vkQueuePresentKHR(m_presentQueue, &presentInfoKHR);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+    {
+        recreateSwapchain();
+    }
+    else if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to present swap chain image", FontColor::Red));
+    }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -1344,6 +1351,41 @@ void Application::recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _
     std::cout << setFontColor("Success to record command buffer " + std::to_string(_imageIndex), FontColor::Purple) << std::endl;
 }
 
+void Application::recreateSwapchain()
+{
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(m_device);
+
+    cleanupSwapchain();
+
+    createSwapchain();
+    createImageViews();
+    createFramebuffers();
+}
+
+void Application::cleanupSwapchain()
+{
+    for (size_t i = 0; i < m_swapchainFramebuffers.size(); ++i)
+    {
+        vkDestroyFramebuffer(m_device, m_swapchainFramebuffers[i], nullptr);
+        std::cout << setFontColor("Destroy framebuffer " + std::to_string(i), FontColor::Indigo) << std::endl;
+    }
+    for (size_t i = 0; i < m_swapchainImageViews.size(); ++i)
+    {
+        vkDestroyImageView(m_device, m_swapchainImageViews[i], nullptr);
+        std::cout << setFontColor("Destroy the swap chain image view " + std::to_string(i), FontColor::Indigo) << std::endl;
+    }
+    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    std::cout << setFontColor("Destroy the swapchain", FontColor::Indigo) << std::endl;
+}
+
 VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT _messageSeverity, VkDebugUtilsMessageTypeFlagsEXT _messageType, const VkDebugUtilsMessengerCallbackDataEXT* _pCallbackData, void* _pUserData)
 {
     if (VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT & _messageSeverity)
@@ -1359,4 +1401,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(VkDebugUtilsMessageSev
         std::cout << setFontColor("Validation layers verbose: " + std::string(_pCallbackData->pMessage), FontColor::White) << std::endl;
     }
     return VK_FALSE;
+}
+
+void Application::framebufferResizeCallback(GLFWwindow* _window, int _width, int _height)
+{
+    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(_window));
+    app->m_framebufferResized = true;
 }
