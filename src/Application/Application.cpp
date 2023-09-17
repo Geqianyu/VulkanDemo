@@ -1403,6 +1403,25 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(VkDebugUtilsMessageSev
     return VK_FALSE;
 }
 
+std::vector<char> Application::readFile(const std::string& _filename)
+{
+    std::ifstream file(_filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error(setFontColor("Failed to open file", FontColor::Red));
+    }
+
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    std::vector<char> buffer(fileSize);
+
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+
+    file.close();
+
+    return buffer;
+}
+
 void Application::framebufferResizeCallback(GLFWwindow* _window, int _width, int _height)
 {
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(_window));
