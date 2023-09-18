@@ -1,9 +1,11 @@
 #ifndef GQY_APPLICATION_H
 #define GQY_APPLICATION_H
 
-#include <exception>
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+#include <exception>
 #include <vector>
 #include <cstring>
 #include <map>
@@ -11,8 +13,28 @@
 #include <set>
 #include <limits>
 #include <fstream>
+#include <array>
 
 #include "common.h"
+
+struct Vertex
+{
+    glm::vec2 positionOS;
+    glm::vec3 color;
+};
+
+const std::vector<Vertex> vertices
+{
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+    { { 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+    { { 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
+    { { -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } }
+};
+
+const std::vector<uint16_t> vertexIndices
+{
+    0, 1, 2, 2, 3, 0
+};
 
 struct QueueFamilyIndices
 {
@@ -79,6 +101,11 @@ private:
     VkShaderModule createShaderModule(const std::vector<char>& _code);
     void createFramebuffers();
     void createCommandPool();
+    void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usageFlags, VkMemoryPropertyFlags _propertyFlags, VkBuffer& _buffer, VkDeviceMemory& _deviceMemory);
+    void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
+    void createVertexBuffer();
+    void createVertexIndicesBuffer();
+    uint32_t findMemoryType(uint32_t _typeFilter, VkMemoryPropertyFlags _properties);
     void createCommandBuffers();
     void createSyncObjects();
     /*********************************************************************************************/
@@ -99,6 +126,9 @@ private:
 
     static std::vector<char> readFile(const std::string& _filename);
     static void framebufferResizeCallback(GLFWwindow* _window, int _width, int _height);
+
+    static VkVertexInputBindingDescription getBindingDescription();
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
 
 private:
     GLFWwindow* m_window = nullptr;
@@ -136,6 +166,11 @@ private:
     std::vector<VkFence> m_flightFences;
     bool m_framebufferResized = false;
     uint32_t m_currentFrame = 0;
+
+    VkBuffer m_vertexBuffer = nullptr;
+    VkDeviceMemory m_vertexBufferMemory = nullptr;
+    VkBuffer m_vertexIndicesBuffer = nullptr;
+    VkDeviceMemory m_vertexIndicesBufferMemory = nullptr;
 };
 
 #endif

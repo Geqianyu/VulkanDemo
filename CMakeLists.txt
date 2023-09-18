@@ -32,6 +32,10 @@ find_package(Vulkan REQUIRED)
 # message(${Vulkan_LIBRARIES})
 # message(${Vulkan_INCLUDE_DIRS})
 
+unset(KK CACHE)
+find_program(KK glslangValidator)
+message(${KK})
+
 # 设置包含的文件
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)
 # message(${CMAKE_CURRENT_SOURCE_DIR}/src)

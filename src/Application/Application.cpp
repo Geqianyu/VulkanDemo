@@ -65,6 +65,8 @@ void Application::initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createVertexBuffer();
+    createVertexIndicesBuffer();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -82,6 +84,18 @@ void Application::mainLoop()
 void Application::cleanup()
 {
     cleanupSwapchain();
+
+    vkDestroyBuffer(m_device, m_vertexIndicesBuffer, nullptr);
+    std::cout << setFontColor("Destroy the vertex indices buffer", FontColor::Indigo) << std::endl;
+
+    vkFreeMemory(m_device, m_vertexIndicesBufferMemory, nullptr);
+    std::cout << setFontColor("Destroy the vertex indices buffer memory", FontColor::Indigo) << std::endl;
+
+    vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+    std::cout << setFontColor("Destroy the vertex buffer", FontColor::Indigo) << std::endl;
+
+    vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+    std::cout << setFontColor("Destroy the vertex buffer memory", FontColor::Indigo) << std::endl;
 
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     std::cout << setFontColor("Destroy the graphics pipeline", FontColor::Indigo) << std::endl;
@@ -912,9 +926,9 @@ void Application::createRenderPass()
 
 void Application::createGraphicsPipeline()
 {
-    std::string vertexShaderFilePath(ASSET_INCLUDE_PATH + std::string("shaders/vert.spv"));
+    std::string vertexShaderFilePath(ASSET_INCLUDE_PATH + std::string("shaders/shader.vert.spv"));
     std::vector<char> vertexShaderCode = readFile(vertexShaderFilePath);
-    std::string fragmentShaderFilePath(ASSET_INCLUDE_PATH + std::string("shaders/frag.spv"));
+    std::string fragmentShaderFilePath(ASSET_INCLUDE_PATH + std::string("shaders/shader.frag.spv"));
     std::vector<char> fragmentShaderCode = readFile(fragmentShaderFilePath);
 
     VkShaderModule vertexShaderModule = createShaderModule(vertexShaderCode);
@@ -946,15 +960,17 @@ void Application::createGraphicsPipeline()
     VkPipelineShaderStageCreateInfo shaderStages[]{ vertexShaderStageCreateInfo, fragmentShaderStageCreateInfo };
 
     // 顶点输入
+    VkVertexInputBindingDescription bindingDescription = getBindingDescription();
+    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = getAttributeDescriptions();
     VkPipelineVertexInputStateCreateInfo vertexInputInfo
     {
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,      // sType
         nullptr,                                                        // pNext
         VK_FALSE,                                                       // flags
-        0,                                                              // vertexBindingDescriptionCount
-        nullptr,                                                        // pVertexBindingDescriptions
-        0,                                                              // vertexAttributeDescriptionCount
-        nullptr                                                         // pVertexAttributeDescriptions
+        1,                                                              // vertexBindingDescriptionCount
+        & bindingDescription,                                           // pVertexBindingDescriptions
+        static_cast<uint32_t>(attributeDescriptions.size()),            // vertexAttributeDescriptionCount
+        attributeDescriptions.data()                                    // pVertexAttributeDescriptions
     };
 
     // 输入装配
@@ -1174,6 +1190,150 @@ void Application::createCommandPool()
     std::cout << setFontColor("Success to create command pool", FontColor::Green) << std::endl;
 }
 
+void Application::createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usageFlags, VkMemoryPropertyFlags _propertyFlags, VkBuffer& _buffer, VkDeviceMemory& _deviceMemory)
+{
+    VkBufferCreateInfo bufferCreateInfo
+    {
+        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,               // sType
+        nullptr,                                            // pNext
+        VK_FALSE,                                           // flags
+        _size,                                              // _size
+        _usageFlags,                                        // _usageFlags
+        VK_SHARING_MODE_EXCLUSIVE,                          // sharingMode
+        0,                                                  // queueFamilyIndexCount
+        nullptr                                             // pQueueFamilyIndices
+    };
+    if (vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &_buffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to create a buffer", FontColor::Red));
+    }
+
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(m_device, _buffer, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo
+    {
+        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,                                 // sType
+        nullptr,                                                                // pNext
+        memoryRequirements.size,                                                // allocationSize
+        findMemoryType(memoryRequirements.memoryTypeBits, _propertyFlags)       // memoryTypeIndex
+    };
+    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &_deviceMemory) != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to allocate buffer memory", FontColor::Red));
+    }
+
+    vkBindBufferMemory(m_device, _buffer, _deviceMemory, 0);
+}
+
+void Application::copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size)
+{
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo
+    {
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,                 // sType
+        nullptr,                                                        // pNext
+        m_commandPool,                                                  // commandPool
+        VK_COMMAND_BUFFER_LEVEL_PRIMARY,                                // level
+        1                                                               // commandBufferCount
+    };
+
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(m_device, &commandBufferAllocateInfo, &commandBuffer);
+
+    VkCommandBufferBeginInfo commandBufferBeginInfo
+    {
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,                // sType
+        nullptr,                                                    // pNext
+        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,                // flags
+        nullptr                                                     // pInheritanceInfo
+    };
+    vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+
+    VkBufferCopy copyRegion
+    {
+        0,                          // srcOffset
+        0,                          // dstOffset
+        _size                       // size
+    };
+    vkCmdCopyBuffer(commandBuffer, _srcBuffer, _dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo
+    {
+        VK_STRUCTURE_TYPE_SUBMIT_INFO,              // sType
+        nullptr,                                    // pNext
+        0,                                          // waitSemaphoreCount
+        nullptr,                                    // pWaitSemaphores
+        nullptr,                                    // pWaitDstStageMask
+        1,                                          // commandBufferCount
+        &commandBuffer,                             // pCommandBuffers
+        0,                                          // signalSemaphoreCount
+        nullptr                                     // pSignalSemaphores
+    };
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, nullptr);
+    vkQueueWaitIdle(m_graphicsQueue);
+
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+}
+
+void Application::createVertexBuffer()
+{
+    VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+    void* data = nullptr;
+    vkMapMemory(m_device, stagingBufferMemory, 0, vertexBufferSize, 0, &data);
+    std::memcpy(data, vertices.data(), static_cast<size_t>(vertexBufferSize));
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+    copyBuffer(stagingBuffer, m_vertexBuffer, vertexBufferSize);
+    std::cout << setFontColor("Success to create vertex buffer", FontColor::Green) << std::endl;
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+}
+
+void Application::createVertexIndicesBuffer()
+{
+    VkDeviceSize vertexIndicesBufferSize = sizeof(vertexIndices[0]) * vertexIndices.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(vertexIndicesBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(m_device, stagingBufferMemory, 0, vertexIndicesBufferSize, 0, &data);
+    std::memcpy(data, vertexIndices.data(), static_cast<size_t>(vertexIndicesBufferSize));
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    createBuffer(vertexIndicesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexIndicesBuffer, m_vertexIndicesBufferMemory);
+    copyBuffer(stagingBuffer, m_vertexIndicesBuffer, vertexIndicesBufferSize);
+    std::cout << setFontColor("Success to create vertex indices buffer", FontColor::Green) << std::endl;
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+}
+
+uint32_t Application::findMemoryType(uint32_t _typeFilter, VkMemoryPropertyFlags _properties)
+{
+    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &physicalDeviceMemoryProperties);
+    for (uint32_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; ++i)
+    {
+        if ((_typeFilter & (1 << i)) && ((physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & _properties) == _properties))
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error(setFontColor("Failed to find suitable memory type", FontColor::Red));
+}
+
 void Application::createCommandBuffers()
 {
     m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1342,7 +1502,12 @@ void Application::recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _
     };
     vkCmdSetScissor(_commandBuffer, 0, 1, &scissor);
 
-    vkCmdDraw(_commandBuffer, 3, 1, 0, 0);
+    VkBuffer vertexBuffers[]{ m_vertexBuffer };
+    VkDeviceSize offsets[]{ 0 };
+    vkCmdBindVertexBuffers(_commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(_commandBuffer, m_vertexIndicesBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+    vkCmdDrawIndexed(_commandBuffer, static_cast<uint32_t>(vertexIndices.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(_commandBuffer);
     if (vkEndCommandBuffer(_commandBuffer) != VK_SUCCESS)
     {
@@ -1426,4 +1591,30 @@ void Application::framebufferResizeCallback(GLFWwindow* _window, int _width, int
 {
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(_window));
     app->m_framebufferResized = true;
+}
+
+VkVertexInputBindingDescription Application::getBindingDescription()
+{
+    VkVertexInputBindingDescription vertexInputBindingDescription
+    {
+        0,                                      // binding
+        sizeof(Vertex),                         // stride
+        VK_VERTEX_INPUT_RATE_VERTEX             // inputRate
+    };
+    return vertexInputBindingDescription;
+}
+
+std::array<VkVertexInputAttributeDescription, 2> Application::getAttributeDescriptions()
+{
+    std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDescriptions;
+    vertexInputAttributeDescriptions[0].location = 0;
+    vertexInputAttributeDescriptions[0].binding = 0;
+    vertexInputAttributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    vertexInputAttributeDescriptions[0].offset = offsetof(Vertex, positionOS);
+    vertexInputAttributeDescriptions[1].location = 1;
+    vertexInputAttributeDescriptions[1].binding = 0;
+    vertexInputAttributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertexInputAttributeDescriptions[1].offset = offsetof(Vertex, color);
+
+    return vertexInputAttributeDescriptions;
 }
