@@ -13,6 +13,8 @@ link_directories(${LIBRARY_OUTPUT_PATH})
 # 添加宏定义
 add_definitions(-DGLFW_INCLUDE_VULKAN)
 add_definitions(-DASSET_INCLUDE_PATH=${ASSET_INCLUDE_PATH})
+add_definitions(-DGLM_FORCE_RADIANS)
+add_definitions(-DSTB_IMAGE_IMPLEMENTATION)
 
 # 添加头文件目录
 include_directories(
@@ -21,6 +23,7 @@ include_directories(
     ${Vulkan_INCLUDE_DIRS}
     ${GLFW_INCLUDE_DIR}
     ${GLM_INCLUDE_DIR}
+    ${STB_INCLUDE_DIR}
 )
 
 # 添加源文件

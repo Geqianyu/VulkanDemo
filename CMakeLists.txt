@@ -23,6 +23,10 @@ set(GLFW_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glfw/include)
 set(GLM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glm)
 # message(${GLM_INCLUDE_DIR})
 
+# 设置 stb 的头文件路径
+set(STB_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/stb)
+# message(${STB_INCLUDE_DIR})
+
 # 设置 asset 的路径
 set(ASSET_INCLUDE_PATH "\"${CMAKE_CURRENT_SOURCE_DIR}/assets/\"")
 
@@ -31,10 +35,6 @@ find_package(Vulkan REQUIRED)
 # message(${Vulkan_FOUND})
 # message(${Vulkan_LIBRARIES})
 # message(${Vulkan_INCLUDE_DIRS})
-
-unset(KK CACHE)
-find_program(KK glslangValidator)
-message(${KK})
 
 # 设置包含的文件
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src)

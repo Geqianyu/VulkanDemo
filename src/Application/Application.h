@@ -4,6 +4,8 @@
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <stb_image.h>
 
 #include <exception>
 #include <vector>
@@ -14,6 +16,7 @@
 #include <limits>
 #include <fstream>
 #include <array>
+#include <chrono>
 
 #include "common.h"
 
@@ -21,6 +24,16 @@ struct Vertex
 {
     glm::vec2 positionOS;
     glm::vec3 color;
+
+    static VkVertexInputBindingDescription getBindingDescription();
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
+};
+
+struct UniformBufferObject
+{
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 const std::vector<Vertex> vertices
@@ -97,6 +110,7 @@ private:
     void createSwapchain();
     void createImageViews();
     void createRenderPass();
+    void createDescriptorSetLayout();
     void createGraphicsPipeline();
     VkShaderModule createShaderModule(const std::vector<char>& _code);
     void createFramebuffers();
@@ -105,6 +119,9 @@ private:
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
     void createVertexBuffer();
     void createVertexIndicesBuffer();
+    void createUniformBuffers();
+    void createDescriptorPool();
+    void createDescriptorSets();
     uint32_t findMemoryType(uint32_t _typeFilter, VkMemoryPropertyFlags _properties);
     void createCommandBuffers();
     void createSyncObjects();
@@ -112,6 +129,7 @@ private:
 
     /******************************************mainLoop*******************************************/
     void drawFrame();
+    void updateUniformBuffer(uint32_t _currentFrame);
     void recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _imageIndex);
     void recreateSwapchain();
     void cleanupSwapchain();
@@ -126,9 +144,6 @@ private:
 
     static std::vector<char> readFile(const std::string& _filename);
     static void framebufferResizeCallback(GLFWwindow* _window, int _width, int _height);
-
-    static VkVertexInputBindingDescription getBindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
 
 private:
     GLFWwindow* m_window = nullptr;
@@ -155,22 +170,31 @@ private:
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
 
     VkRenderPass m_renderPass = nullptr;
+    VkDescriptorSetLayout m_descriptorSetLayout = nullptr;
     VkPipelineLayout m_pipelineLayout = nullptr;
     VkPipeline m_graphicsPipeline = nullptr;
 
     VkCommandPool m_commandPool = nullptr;
     std::vector<VkCommandBuffer> m_commandBuffers;
 
-    std::vector<VkSemaphore> m_imageAvailableSemaphores;
-    std::vector<VkSemaphore> m_renderFinishedSemaphores;
-    std::vector<VkFence> m_flightFences;
-    bool m_framebufferResized = false;
-    uint32_t m_currentFrame = 0;
-
     VkBuffer m_vertexBuffer = nullptr;
     VkDeviceMemory m_vertexBufferMemory = nullptr;
     VkBuffer m_vertexIndicesBuffer = nullptr;
     VkDeviceMemory m_vertexIndicesBufferMemory = nullptr;
+
+    std::vector<VkBuffer> m_uniformBuffers;
+    std::vector<VkDeviceMemory> m_uniformBuffersMemory;
+    std::vector<void*> m_uniformBuffersMapped;
+
+    VkDescriptorPool m_descriptorPool;
+    std::vector<VkDescriptorSet> m_descriptorSets;
+
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;
+    std::vector<VkFence> m_flightFences;
+    bool m_framebufferResized = false;
+
+    uint32_t m_currentFrame = 0;
 };
 
 #endif

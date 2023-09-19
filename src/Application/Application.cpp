@@ -42,7 +42,6 @@ void Application::initWindow(const int _width, const int _height, const std::str
     {
         std::runtime_error(setFontColor("Failed to create a window", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create a window", FontColor::Green) << std::endl;
 
     glfwSetWindowUserPointer(m_window, this);
     glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
@@ -62,11 +61,15 @@ void Application::initVulkan()
     createSwapchain();
     createImageViews();
     createRenderPass();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
     createVertexBuffer();
     createVertexIndicesBuffer();
+    createUniformBuffers();
+    createDescriptorPool();
+    createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -78,6 +81,7 @@ void Application::mainLoop()
         glfwPollEvents();
         drawFrame();
     }
+
     vkDeviceWaitIdle(m_device);
 }
 
@@ -85,57 +89,43 @@ void Application::cleanup()
 {
     cleanupSwapchain();
 
-    vkDestroyBuffer(m_device, m_vertexIndicesBuffer, nullptr);
-    std::cout << setFontColor("Destroy the vertex indices buffer", FontColor::Indigo) << std::endl;
-
-    vkFreeMemory(m_device, m_vertexIndicesBufferMemory, nullptr);
-    std::cout << setFontColor("Destroy the vertex indices buffer memory", FontColor::Indigo) << std::endl;
-
-    vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
-    std::cout << setFontColor("Destroy the vertex buffer", FontColor::Indigo) << std::endl;
-
-    vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
-    std::cout << setFontColor("Destroy the vertex buffer memory", FontColor::Indigo) << std::endl;
-
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-    std::cout << setFontColor("Destroy the graphics pipeline", FontColor::Indigo) << std::endl;
-
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-    std::cout << setFontColor("Destroy the pipeline layout", FontColor::Indigo) << std::endl;
-
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-    std::cout << setFontColor("Destroy the render pass", FontColor::Indigo) << std::endl;
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
+        vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
+    }
+
+    vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+    vkDestroyBuffer(m_device, m_vertexIndicesBuffer, nullptr);
+    vkFreeMemory(m_device, m_vertexIndicesBufferMemory, nullptr);
+    vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+    vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
         vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
         vkDestroyFence(m_device, m_flightFences[i], nullptr);
-        std::cout << setFontColor("Destroy synchronization objects " + std::to_string(i), FontColor::Indigo) << std::endl;
     }
 
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-    std::cout << setFontColor("Destroy the command pool", FontColor::Indigo) << std::endl;
-
     vkDestroyDevice(m_device, nullptr);
-    std::cout << setFontColor("Destroy the logical device", FontColor::Indigo) << std::endl;
 
     #ifndef NDEBUG
         destroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
-        std::cout << setFontColor("Destroy the debug messenger", FontColor::Indigo) << std::endl;
     #endif
 
     vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-    std::cout << setFontColor("Destroy the surface", FontColor::Indigo) << std::endl;
-
     vkDestroyInstance(m_instance, nullptr);
-    std::cout << setFontColor("Destroy the vulkan instance", FontColor::Indigo) << std::endl;
 
     glfwDestroyWindow(m_window);
-    std::cout << setFontColor("Destroy the window", FontColor::Indigo) << std::endl;
 
     glfwTerminate();
-    std::cout << setFontColor("Terminate glfw", FontColor::Indigo) << std::endl;
 }
 
 void Application::createInstance()
@@ -190,19 +180,14 @@ void Application::createInstance()
     {
         throw std::runtime_error(setFontColor("Failed to create vulkan instance", FontColor::Red));
     }
-    else
+    uint32_t instanceExtensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, nullptr);
+    std::vector<VkExtensionProperties> instanceExtensionProperties(instanceExtensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, instanceExtensionProperties.data());
+    std::cout << "Available extensions:\n";
+    for (const VkExtensionProperties& extension : instanceExtensionProperties)
     {
-        std::cout << setFontColor("Success to create vulkan instance", FontColor::Green) << std::endl;
-
-        uint32_t instanceExtensionCount = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, nullptr);
-        std::vector<VkExtensionProperties> instanceExtensionProperties(instanceExtensionCount);
-        vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, instanceExtensionProperties.data());
-        std::cout << "\tAvailable extensions:\n";
-        for (const VkExtensionProperties& extension : instanceExtensionProperties)
-        {
-            std::cout << "\t\t" << extension.extensionName << "\n";
-        }
+        std::cout << "\t" << extension.extensionName << "\n";
     }
 }
 
@@ -242,7 +227,6 @@ void Application::setupDebugMessenger()
     {
         throw std::runtime_error(setFontColor("Failed to set up debug messenger", FontColor::Red));
     }
-    std::cout << setFontColor("Success to set up debug messenger", FontColor::Green) << std::endl;
 }
 
 VkResult Application::createDebugUtilsMessengerEXT(VkInstance _instance, const VkDebugUtilsMessengerCreateInfoEXT* _pCreateInfo, const VkAllocationCallbacks* _pAllocator, VkDebugUtilsMessengerEXT* _pDebugMessenger)
@@ -320,7 +304,6 @@ void Application::pickPhysicalDevice()
     {
         throw std::runtime_error(setFontColor("Failed to find a suitable GPU", FontColor::Red));
     }
-    std::cout << setFontColor("Success to find a suitable GPU", FontColor::Purple) << std::endl;
     printPhysicalDeviceFeature(m_physicalDevice);
     printPhysicalDeviceProperties(m_physicalDevice);
 }
@@ -671,7 +654,6 @@ void Application::createLogicalDevice()
     {
         throw std::runtime_error(setFontColor("Failed to create logical device", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create logical device", FontColor::Green) << std::endl;
 
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
@@ -683,7 +665,6 @@ void Application::createSurface()
     {
         throw std::runtime_error(setFontColor("Failed to create window surface", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create window surface", FontColor::Green) << std::endl;
 }
 
 bool Application::checkDeviceExtensionSupport(VkPhysicalDevice _physicalDevice)
@@ -800,7 +781,7 @@ void Application::createSwapchain()
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,                                                                        // imageUsage
         indices.graphicsFamily == indices.presentFamily ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,   // imageSharingMode
         static_cast<uint32_t>(indices.graphicsFamily == indices.presentFamily ? 0 : 2),                             // queueFamilyIndexCount
-        queueFamilyIndices,                                                                                         // pQueueFamilyIndices
+        indices.graphicsFamily == indices.presentFamily ? nullptr : queueFamilyIndices,                             // pQueueFamilyIndices
         swapchainSupport.capabilities.currentTransform,                                                             // preTransform
         VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,                                                                          // compositeAlpha
         presentMode,                                                                                                // presentMode
@@ -812,7 +793,6 @@ void Application::createSwapchain()
     {
         throw std::runtime_error(setFontColor("Failed to create swap chain", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create swap chain", FontColor::Green) << std::endl;
 
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
     m_swapchainImages.resize(imageCount);
@@ -854,7 +834,6 @@ void Application::createImageViews()
         {
             throw std::runtime_error(setFontColor("Failed to create image views", FontColor::Red));
         }
-        std::cout << setFontColor("Success to create image view " + std::to_string(i), FontColor::Green) << std::endl;
     }
 }
 
@@ -921,7 +900,31 @@ void Application::createRenderPass()
     {
         throw std::runtime_error(setFontColor("Failed to create render pass", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create render pass", FontColor::Green) << std::endl;
+}
+
+void Application::createDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding descriptorSetLayoutBinding
+    {
+        0,                                                      // binding
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                      // descriptorType
+        1,                                                      // descriptorCount
+        VK_SHADER_STAGE_VERTEX_BIT,                             // stageFlags
+        nullptr                                                 // pImmutableSamplers
+    };
+
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo
+    {
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,    // sType
+        nullptr,                                                // pNext
+        VK_FALSE,                                               // flags
+        1,                                                      // bindingCount
+        &descriptorSetLayoutBinding                             // pBindings
+    };
+    if (vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayout) != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to create descriptor set layout", FontColor::Red));
+    }
 }
 
 void Application::createGraphicsPipeline()
@@ -932,9 +935,7 @@ void Application::createGraphicsPipeline()
     std::vector<char> fragmentShaderCode = readFile(fragmentShaderFilePath);
 
     VkShaderModule vertexShaderModule = createShaderModule(vertexShaderCode);
-    std::cout << setFontColor("Success to create vertex shader module", FontColor::Green) << std::endl;
     VkShaderModule fragmentShaderModule = createShaderModule(fragmentShaderCode);
-    std::cout << setFontColor("Success to create fragment shader module", FontColor::Green) << std::endl;
 
     VkPipelineShaderStageCreateInfo vertexShaderStageCreateInfo
     {
@@ -957,30 +958,29 @@ void Application::createGraphicsPipeline()
         nullptr                                                     // pSpecializationInfo
     };
 
-    VkPipelineShaderStageCreateInfo shaderStages[]{ vertexShaderStageCreateInfo, fragmentShaderStageCreateInfo };
+    VkPipelineShaderStageCreateInfo shaderStageCreateInfos[]{ vertexShaderStageCreateInfo, fragmentShaderStageCreateInfo };
 
     // 顶点输入
-    VkVertexInputBindingDescription bindingDescription = getBindingDescription();
-    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = getAttributeDescriptions();
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo
+    VkVertexInputBindingDescription vertexInputBindingDescription = Vertex::getBindingDescription();
+    std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDescriptions = Vertex::getAttributeDescriptions();
+    VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo
     {
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,      // sType
-        nullptr,                                                        // pNext
-        VK_FALSE,                                                       // flags
-        1,                                                              // vertexBindingDescriptionCount
-        & bindingDescription,                                           // pVertexBindingDescriptions
-        static_cast<uint32_t>(attributeDescriptions.size()),            // vertexAttributeDescriptionCount
-        attributeDescriptions.data()                                    // pVertexAttributeDescriptions
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,          // sType
+        nullptr,                                                            // pNext
+        VK_FALSE,                                                           // flags
+        1,                                                                  // vertexBindingDescriptionCount
+        & vertexInputBindingDescription,                                    // pVertexBindingDescriptions
+        static_cast<uint32_t>(vertexInputAttributeDescriptions.size()),     // vertexAttributeDescriptionCount
+        vertexInputAttributeDescriptions.data()                             // pVertexAttributeDescriptions
     };
 
-    // 输入装配
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo
     {
-        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,    // sType
-        nullptr,                                                        // pNext
-        VK_FALSE,                                                       // flags
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,                            // topology
-        VK_FALSE                                                        // primitiveRestartEnable
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,        // sType
+        nullptr,                                                            // pNext
+        VK_FALSE,                                                           // flags
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,                                // topology
+        VK_FALSE                                                            // primitiveRestartEnable
     };
 
     VkPipelineViewportStateCreateInfo viewportStateCreateInfo
@@ -1004,7 +1004,7 @@ void Application::createGraphicsPipeline()
         VK_FALSE,                                                       // rasterizerDiscardEnable
         VK_POLYGON_MODE_FILL,                                           // polygonMode
         VK_CULL_MODE_BACK_BIT,                                          // cullMode
-        VK_FRONT_FACE_CLOCKWISE,                                        // frontFace
+        VK_FRONT_FACE_COUNTER_CLOCKWISE,                                // frontFace
         VK_FALSE,                                                       // depthBiasEnable
         0.0f,                                                           // depthBiasConstantFactor
         0.0f,                                                           // depthBiasClamp
@@ -1020,7 +1020,7 @@ void Application::createGraphicsPipeline()
         VK_FALSE,                                                       // flags
         VK_SAMPLE_COUNT_1_BIT,                                          // rasterizationSamples
         VK_FALSE,                                                       // sampleShadingEnable
-        1.0f,                                                           // minSampleShading
+        0.0f,                                                           // minSampleShading
         nullptr,                                                        // pSampleMask
         VK_FALSE,                                                       // alphaToCoverageEnable
         VK_FALSE                                                        // alphaToOneEnable
@@ -1077,8 +1077,8 @@ void Application::createGraphicsPipeline()
         VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,              // sType
         nullptr,                                                    // pNext
         VK_FALSE,                                                   // flags
-        0,                                                          // setLayoutCount
-        nullptr,                                                    // pSetLayouts
+        1,                                                          // setLayoutCount
+        &m_descriptorSetLayout,                                     // pSetLayouts
         0,                                                          // pushConstantRangeCount
         nullptr                                                     // pPushConstantRanges
     };
@@ -1086,7 +1086,6 @@ void Application::createGraphicsPipeline()
     {
         throw std::runtime_error(setFontColor("Failed to create pipeline layout", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create pipeline layout", FontColor::Green) << std::endl;
 
     VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo
     {
@@ -1094,9 +1093,9 @@ void Application::createGraphicsPipeline()
         nullptr,                                                    // pNext
         VK_FALSE,                                                   // flags
         2,                                                          // stageCount
-        shaderStages,                                               // pStages
-        &vertexInputInfo,                                           // pVertexInputState
-        &inputAssembly,                                             // pInputAssemblyState
+        shaderStageCreateInfos,                                     // pStages
+        &vertexInputStateCreateInfo,                                // pVertexInputState
+        &inputAssemblyStateCreateInfo,                              // pInputAssemblyState
         nullptr,                                                    // pTessellationState
         &viewportStateCreateInfo,                                   // pViewportState
         &rasterizationStateCreateInfo,                              // pRasterizationState
@@ -1114,12 +1113,9 @@ void Application::createGraphicsPipeline()
     {
         throw std::runtime_error(setFontColor("Failed to create graphics pipeline", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create graphics pipeline", FontColor::Green) << std::endl;
 
     vkDestroyShaderModule(m_device, vertexShaderModule, nullptr);
-    std::cout << setFontColor("Destroy the vertex shader module", FontColor::Indigo) << std::endl;
     vkDestroyShaderModule(m_device, fragmentShaderModule, nullptr);
-    std::cout << setFontColor("Destroy the fragment shader module", FontColor::Indigo) << std::endl;
 }
 
 VkShaderModule Application::createShaderModule(const std::vector<char>& _code)
@@ -1148,10 +1144,8 @@ void Application::createFramebuffers()
 
     for (size_t i = 0; i < m_swapchainImageViews.size(); ++i)
     {
-        VkImageView attachments[]
-        {
-            m_swapchainImageViews[i]
-        };
+        VkImageView attachments[]{ m_swapchainImageViews[i] };
+
         VkFramebufferCreateInfo framebufferCreateInfo
         {
             VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,              // sType
@@ -1168,7 +1162,6 @@ void Application::createFramebuffers()
         {
             throw std::runtime_error(setFontColor("Failed to create framebuffer " + std::to_string(i), FontColor::Red));
         }
-        std::cout << setFontColor("Success to create framebuffer " + std::to_string(i), FontColor::Green) << std::endl;
     }
 }
 
@@ -1187,7 +1180,6 @@ void Application::createCommandPool()
     {
         throw std::runtime_error(setFontColor("Failed to create command pool", FontColor::Red));
     }
-    std::cout << setFontColor("Success to create command pool", FontColor::Green) << std::endl;
 }
 
 void Application::createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usageFlags, VkMemoryPropertyFlags _propertyFlags, VkBuffer& _buffer, VkDeviceMemory& _deviceMemory)
@@ -1292,7 +1284,6 @@ void Application::createVertexBuffer()
 
     createBuffer(vertexBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
     copyBuffer(stagingBuffer, m_vertexBuffer, vertexBufferSize);
-    std::cout << setFontColor("Success to create vertex buffer", FontColor::Green) << std::endl;
 
     vkDestroyBuffer(m_device, stagingBuffer, nullptr);
     vkFreeMemory(m_device, stagingBufferMemory, nullptr);
@@ -1313,10 +1304,91 @@ void Application::createVertexIndicesBuffer()
 
     createBuffer(vertexIndicesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexIndicesBuffer, m_vertexIndicesBufferMemory);
     copyBuffer(stagingBuffer, m_vertexIndicesBuffer, vertexIndicesBufferSize);
-    std::cout << setFontColor("Success to create vertex indices buffer", FontColor::Green) << std::endl;
 
     vkDestroyBuffer(m_device, stagingBuffer, nullptr);
     vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+}
+
+void Application::createUniformBuffers()
+{
+    VkDeviceSize uniformBufferSize = sizeof(UniformBufferObject);
+
+    m_uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    m_uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    m_uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        createBuffer(uniformBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_uniformBuffers[i], m_uniformBuffersMemory[i]);
+        vkMapMemory(m_device, m_uniformBuffersMemory[i], 0, uniformBufferSize, 0, &m_uniformBuffersMapped[i]);
+    }
+}
+
+void Application::createDescriptorPool()
+{
+    VkDescriptorPoolSize descriptorPoolSize
+    {
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,                  // type
+        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)         // descriptorCount
+    };
+
+    VkDescriptorPoolCreateInfo descriptorPoolCreateInfo
+    {
+        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,      // sType
+        nullptr,                                            // pNext
+        VK_FALSE,                                           // flags
+        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),        // maxSets
+        1,                                                  // poolSizeCount
+        &descriptorPoolSize                                 // pPoolSizes
+    };
+    if (vkCreateDescriptorPool(m_device, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to create descriptor pool", FontColor::Red));
+    }
+}
+
+void Application::createDescriptorSets()
+{
+    std::vector<VkDescriptorSetLayout> descriptorSetLayout(MAX_FRAMES_IN_FLIGHT, m_descriptorSetLayout);
+    VkDescriptorSetAllocateInfo descriptorSetAllocateInfo
+    {
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,             // sType
+        nullptr,                                                    // pNext
+        m_descriptorPool,                                           // descriptorPool
+        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),                // descriptorSetCount
+        descriptorSetLayout.data()                                  // pSetLayouts
+    };
+
+    m_descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(m_device, &descriptorSetAllocateInfo, m_descriptorSets.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error(setFontColor("Failed to allocate descriptor sets", FontColor::Red));
+    }
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        VkDescriptorBufferInfo descriptorBufferInfo
+        {
+            m_uniformBuffers[i],                        // buffer
+            0,                                          // offset
+            sizeof(UniformBufferObject)                 // range
+        };
+
+        VkWriteDescriptorSet writeDescriptorSet
+        {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,     // sType
+            nullptr,                                    // pNext
+            m_descriptorSets[i],                        // dstSet
+            0,                                          // dstBinding
+            0,                                          // dstArrayElement
+            1,                                          // descriptorCount
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          // descriptorType
+            nullptr,                                    // pImageInfo
+            &descriptorBufferInfo,                      // pBufferInfo
+            nullptr                                     // pTexelBufferView
+        };
+        vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+    }
 }
 
 uint32_t Application::findMemoryType(uint32_t _typeFilter, VkMemoryPropertyFlags _properties)
@@ -1350,7 +1422,6 @@ void Application::createCommandBuffers()
     {
         throw std::runtime_error(setFontColor("Failed to allocate command buffers", FontColor::Red));
     }
-    std::cout << setFontColor("Success to allocate command buffers", FontColor::Purple) << std::endl;
 }
 
 void Application::createSyncObjects()
@@ -1379,7 +1450,6 @@ void Application::createSyncObjects()
         {
             throw std::runtime_error(setFontColor("Failed to create synchronization objects " + std::to_string(i) + " for a frame", FontColor::Red));
         }
-        std::cout << setFontColor("Success to create synchronization objects " + std::to_string(i) + " for a frame", FontColor::Green) << std::endl;
     }
 }
 
@@ -1391,13 +1461,14 @@ void Application::drawFrame()
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, std::numeric_limits<uint64_t>::max(), m_imageAvailableSemaphores[m_currentFrame], nullptr, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        m_framebufferResized = false;
         recreateSwapchain();
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
         throw std::runtime_error(setFontColor("Failed to acquire swap chain image", FontColor::Red));
     }
+
+    updateUniformBuffer(m_currentFrame);
 
     vkResetFences(m_device, 1, &m_flightFences[m_currentFrame]);
 
@@ -1423,7 +1494,6 @@ void Application::drawFrame()
     {
         throw std::runtime_error(setFontColor("Failed to submit draw command buffer", FontColor::Red));
     }
-    std::cout << setFontColor("Submit draw command buffer", FontColor::Purple) << std::endl;
 
     VkSwapchainKHR swapchains[]{ m_swapchain };
     VkPresentInfoKHR presentInfoKHR
@@ -1438,8 +1508,9 @@ void Application::drawFrame()
         nullptr                                     // pResults
     };
     result = vkQueuePresentKHR(m_presentQueue, &presentInfoKHR);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_framebufferResized)
     {
+        m_framebufferResized = false;
         recreateSwapchain();
     }
     else if (result != VK_SUCCESS)
@@ -1448,6 +1519,22 @@ void Application::drawFrame()
     }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Application::updateUniformBuffer(uint32_t _currentFrame)
+{
+    static std::chrono::steady_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+
+    std::chrono::steady_clock::time_point currentTime = std::chrono::high_resolution_clock::now();
+    float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject uniformBufferObject{ };
+    uniformBufferObject.model = glm::rotate(glm::mat4(1.0f), deltaTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    uniformBufferObject.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    uniformBufferObject.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(m_swapchainExtent.width) / m_swapchainExtent.height, 0.1f, 10.0f);
+    uniformBufferObject.proj[1][1] *= -1.0f;
+
+    std::memcpy(m_uniformBuffersMapped[_currentFrame], &uniformBufferObject, sizeof(uniformBufferObject));
 }
 
 void Application::recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _imageIndex)
@@ -1463,7 +1550,6 @@ void Application::recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _
     {
         throw std::runtime_error(setFontColor("Failed to begin recording command buffer " + std::to_string(_imageIndex), FontColor::Red));
     }
-    std::cout << setFontColor("Begin to record command buffer " + std::to_string(_imageIndex), FontColor::Purple) << std::endl;
 
     VkClearValue clearValues{ { { 0.0f, 0.0f, 0.0f, 1.0f } } };
     VkRenderPassBeginInfo renderPassBeginInfo
@@ -1507,13 +1593,14 @@ void Application::recordCommandBuffer(VkCommandBuffer _commandBuffer, uint32_t _
     vkCmdBindVertexBuffers(_commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(_commandBuffer, m_vertexIndicesBuffer, 0, VK_INDEX_TYPE_UINT16);
 
+    vkCmdBindDescriptorSets(_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[m_currentFrame], 0, nullptr);
+
     vkCmdDrawIndexed(_commandBuffer, static_cast<uint32_t>(vertexIndices.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(_commandBuffer);
     if (vkEndCommandBuffer(_commandBuffer) != VK_SUCCESS)
     {
         throw std::runtime_error(setFontColor("Failed to record command buffer " + std::to_string(_imageIndex), FontColor::Red));
     }
-    std::cout << setFontColor("Success to record command buffer " + std::to_string(_imageIndex), FontColor::Purple) << std::endl;
 }
 
 void Application::recreateSwapchain()
@@ -1537,18 +1624,17 @@ void Application::recreateSwapchain()
 
 void Application::cleanupSwapchain()
 {
-    for (size_t i = 0; i < m_swapchainFramebuffers.size(); ++i)
+    for (VkFramebuffer swapchainFramebuffer : m_swapchainFramebuffers)
     {
-        vkDestroyFramebuffer(m_device, m_swapchainFramebuffers[i], nullptr);
-        std::cout << setFontColor("Destroy framebuffer " + std::to_string(i), FontColor::Indigo) << std::endl;
+        vkDestroyFramebuffer(m_device, swapchainFramebuffer, nullptr);
     }
-    for (size_t i = 0; i < m_swapchainImageViews.size(); ++i)
+
+    for (VkImageView swapchainImageView : m_swapchainImageViews)
     {
-        vkDestroyImageView(m_device, m_swapchainImageViews[i], nullptr);
-        std::cout << setFontColor("Destroy the swap chain image view " + std::to_string(i), FontColor::Indigo) << std::endl;
+        vkDestroyImageView(m_device, swapchainImageView, nullptr);
     }
+
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-    std::cout << setFontColor("Destroy the swapchain", FontColor::Indigo) << std::endl;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Application::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT _messageSeverity, VkDebugUtilsMessageTypeFlagsEXT _messageType, const VkDebugUtilsMessengerCallbackDataEXT* _pCallbackData, void* _pUserData)
@@ -1591,9 +1677,10 @@ void Application::framebufferResizeCallback(GLFWwindow* _window, int _width, int
 {
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(_window));
     app->m_framebufferResized = true;
+    std::cout << setFontColor("Resize window:\n\twidth: " + std::to_string(_width) + "\n\theight: " + std::to_string(_height), FontColor::Purple) << std::endl;
 }
 
-VkVertexInputBindingDescription Application::getBindingDescription()
+VkVertexInputBindingDescription Vertex::getBindingDescription()
 {
     VkVertexInputBindingDescription vertexInputBindingDescription
     {
@@ -1604,7 +1691,7 @@ VkVertexInputBindingDescription Application::getBindingDescription()
     return vertexInputBindingDescription;
 }
 
-std::array<VkVertexInputAttributeDescription, 2> Application::getAttributeDescriptions()
+std::array<VkVertexInputAttributeDescription, 2> Vertex::getAttributeDescriptions()
 {
     std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDescriptions;
     vertexInputAttributeDescriptions[0].location = 0;
