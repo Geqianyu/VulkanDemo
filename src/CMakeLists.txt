@@ -14,7 +14,10 @@ link_directories(${LIBRARY_OUTPUT_PATH})
 add_definitions(-DGLFW_INCLUDE_VULKAN)
 add_definitions(-DASSET_INCLUDE_PATH=${ASSET_INCLUDE_PATH})
 add_definitions(-DGLM_FORCE_RADIANS)
+add_definitions(-DGLM_ENABLE_EXPERIMENTAL)
 add_definitions(-DSTB_IMAGE_IMPLEMENTATION)
+add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
+add_definitions(-DTINYOBJLOADER_IMPLEMENTATION)
 
 # 添加头文件目录
 include_directories(
@@ -24,6 +27,7 @@ include_directories(
     ${GLFW_INCLUDE_DIR}
     ${GLM_INCLUDE_DIR}
     ${STB_INCLUDE_DIR}
+    ${TINYOBJLOADER_INCLUDE_DIR}
 )
 
 # 添加源文件

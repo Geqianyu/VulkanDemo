@@ -5,28 +5,33 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <stb_image.h>
+#include <glm/gtx/hash.hpp>
 
 #include <exception>
 #include <vector>
 #include <cstring>
 #include <map>
+#include <unordered_map>
 #include <optional>
 #include <set>
 #include <limits>
 #include <fstream>
 #include <array>
 #include <chrono>
+#include <algorithm>
 
 #include "common.h"
 
 struct Vertex
 {
-    glm::vec2 positionOS;
+    glm::vec3 positionOS;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription getBindingDescription();
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
+
+    bool operator == (const Vertex& _vertex) const;
 };
 
 struct UniformBufferObject
@@ -34,19 +39,6 @@ struct UniformBufferObject
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
-};
-
-const std::vector<Vertex> vertices
-{
-    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
-    { { 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
-    { { 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
-    { { -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } }
-};
-
-const std::vector<uint16_t> vertexIndices
-{
-    0, 1, 2, 2, 3, 0
 };
 
 struct QueueFamilyIndices
@@ -117,6 +109,20 @@ private:
     void createCommandPool();
     void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usageFlags, VkMemoryPropertyFlags _propertyFlags, VkBuffer& _buffer, VkDeviceMemory& _deviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
+    void createDepthResource();
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _imageTiling, VkFormatFeatureFlags _formatFeatureFlags);
+    VkFormat findDepthFormat();
+    bool hasStencilComponent(VkFormat _format);
+    void createTextureImage();
+    void createTextureImageView();
+    void createTextureSampler();
+    VkImageView createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _imageAspectFlags);
+    void createImage(uint32_t _width, uint32_t _height, VkFormat _format, VkImageTiling _imageTiling, VkImageUsageFlags _imageUsageFlags, VkMemoryPropertyFlags _memoryPropertyFlags, VkImage& _image, VkDeviceMemory& _imageMemory);
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer _commandBuffer);
+    void transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldImageLayout, VkImageLayout _newImageLayout);
+    void copyBufferToImage(VkBuffer _buffer, VkImage _image, uint32_t _width, uint32_t _height);
+    void loadModel();
     void createVertexBuffer();
     void createVertexIndicesBuffer();
     void createUniformBuffers();
@@ -177,10 +183,21 @@ private:
     VkCommandPool m_commandPool = nullptr;
     std::vector<VkCommandBuffer> m_commandBuffers;
 
+    VkImage m_textureImage = nullptr;
+    VkDeviceMemory m_textureImageMemory = nullptr;
+    VkImageView m_textureImageView = nullptr;
+    VkSampler m_textureSampler = nullptr;
+
+    std::vector<Vertex> m_vertices;
+    std::vector<uint32_t> m_vertexIndices;
     VkBuffer m_vertexBuffer = nullptr;
     VkDeviceMemory m_vertexBufferMemory = nullptr;
     VkBuffer m_vertexIndicesBuffer = nullptr;
     VkDeviceMemory m_vertexIndicesBufferMemory = nullptr;
+
+    VkImage m_depthImage = nullptr;
+    VkDeviceMemory m_depthImageMemory = nullptr;
+    VkImageView m_depthImageView = nullptr;
 
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersMemory;
