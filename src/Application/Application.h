@@ -110,17 +110,19 @@ private:
     void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usageFlags, VkMemoryPropertyFlags _propertyFlags, VkBuffer& _buffer, VkDeviceMemory& _deviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
     void createDepthResource();
+    void createColorResource();
     VkFormat findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _imageTiling, VkFormatFeatureFlags _formatFeatureFlags);
     VkFormat findDepthFormat();
     bool hasStencilComponent(VkFormat _format);
+    void generateMipmaps(VkImage _image, VkFormat _format, int32_t _textureWidth, int32_t _textureHeight, uint32_t _mipLevels);
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
-    VkImageView createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _imageAspectFlags);
-    void createImage(uint32_t _width, uint32_t _height, VkFormat _format, VkImageTiling _imageTiling, VkImageUsageFlags _imageUsageFlags, VkMemoryPropertyFlags _memoryPropertyFlags, VkImage& _image, VkDeviceMemory& _imageMemory);
+    VkImageView createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _imageAspectFlags, uint32_t _mipLevels);
+    void createImage(uint32_t _width, uint32_t _height, uint32_t _mipLevels, VkSampleCountFlagBits _sampleCountFlagBits, VkFormat _format, VkImageTiling _imageTiling, VkImageUsageFlags _imageUsageFlags, VkMemoryPropertyFlags _memoryPropertyFlags, VkImage& _image, VkDeviceMemory& _imageMemory);
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer _commandBuffer);
-    void transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldImageLayout, VkImageLayout _newImageLayout);
+    void transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldImageLayout, VkImageLayout _newImageLayout, uint32_t _mipLevels);
     void copyBufferToImage(VkBuffer _buffer, VkImage _image, uint32_t _width, uint32_t _height);
     void loadModel();
     void createVertexBuffer();
@@ -131,6 +133,7 @@ private:
     uint32_t findMemoryType(uint32_t _typeFilter, VkMemoryPropertyFlags _properties);
     void createCommandBuffers();
     void createSyncObjects();
+    VkSampleCountFlagBits getMaxUsableSampleCount();
     /*********************************************************************************************/
 
     /******************************************mainLoop*******************************************/
@@ -183,6 +186,7 @@ private:
     VkCommandPool m_commandPool = nullptr;
     std::vector<VkCommandBuffer> m_commandBuffers;
 
+    uint32_t m_mipLevels = 0;
     VkImage m_textureImage = nullptr;
     VkDeviceMemory m_textureImageMemory = nullptr;
     VkImageView m_textureImageView = nullptr;
@@ -198,6 +202,11 @@ private:
     VkImage m_depthImage = nullptr;
     VkDeviceMemory m_depthImageMemory = nullptr;
     VkImageView m_depthImageView = nullptr;
+
+    VkSampleCountFlagBits m_massSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkImage m_colorImage = nullptr;
+    VkDeviceMemory m_colorImageMemory = nullptr;
+    VkImageView m_colorImageView = nullptr;
 
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersMemory;
