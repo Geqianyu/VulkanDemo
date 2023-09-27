@@ -3,7 +3,9 @@
 
 #include "Application.h"
 
-const std::string MODEL_PATH = ASSET_INCLUDE_PATH + std::string("obj/viking_room.obj");
+const std::string MODEL_PATH = ASSET_INCLUDE_PATH + std::string("models/ganyu/ganyu.obj");
+const std::string MTL_PATH = ASSET_INCLUDE_PATH + std::string("models/ganyu");
+// const std::string MODEL_PATH = ASSET_INCLUDE_PATH + std::string("obj/viking_room.obj");
 const std::string TEXTURE_PATH = ASSET_INCLUDE_PATH + std::string("Textures/viking_room.png");
 
 namespace std
@@ -1706,7 +1708,7 @@ void Application::loadModel()
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str(), MTL_PATH.c_str()))
     {
         throw std::runtime_error(setFontColor(warn + err, FontColor::Red));
     }
@@ -2028,9 +2030,9 @@ void Application::updateUniformBuffer(uint32_t _currentFrame)
     float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject uniformBufferObject{ };
-    uniformBufferObject.model = glm::rotate(glm::mat4(1.0f), deltaTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    uniformBufferObject.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    uniformBufferObject.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(m_swapchainExtent.width) / m_swapchainExtent.height, 0.1f, 10.0f);
+    uniformBufferObject.model = glm::rotate(glm::mat4(1.0f), deltaTime * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    uniformBufferObject.view = glm::lookAt(glm::vec3(0.0f, 10.0f, 20.0f), glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    uniformBufferObject.proj = glm::perspective(glm::radians(60.0f), static_cast<float>(m_swapchainExtent.width) / m_swapchainExtent.height, 0.1f, 100.0f);
     uniformBufferObject.proj[1][1] *= -1.0f;
 
     std::memcpy(m_uniformBuffersMapped[_currentFrame], &uniformBufferObject, sizeof(uniformBufferObject));
