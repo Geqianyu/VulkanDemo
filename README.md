@@ -1,6 +1,7 @@
 # VulkanDemo
 VulkanDemo
 
+0. 安装 Vulkan, https://vulkan.lunarg.com/
 1. 安装 CMake，要求 3.5 版本以后
 2. 运行以下代码：
 ```
